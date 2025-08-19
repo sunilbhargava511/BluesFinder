@@ -29,6 +29,7 @@ const BluesNearbyHome = () => {
   const [todayEvents, setTodayEvents] = useState<BluesEvent[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasNetworkError, setHasNetworkError] = useState(false);
   const [dateFilter, setDateFilter] = useState<'tonight' | 'week' | 'month'>('week');
   
   // API usage tracking
@@ -176,13 +177,23 @@ const BluesNearbyHome = () => {
 
       // Handle rate limiting
       if (!apiResponse.rateLimitInfo.allowed) {
+        const reason = apiResponse.rateLimitInfo.reason || '';
+        
+        // Don't show modal for network/fetch errors - just set error message
+        if (reason.includes('Failed to fetch') || reason.includes('ERR_INSUFFICIENT_RESOURCES') || reason.includes('API Error')) {
+          console.log('Network error detected, not showing modal:', reason);
+          setHasNetworkError(true);
+          setError('Unable to connect to Ticketmaster API. Please check your internet connection and try again.');
+          return;
+        }
+        
         if (apiResponse.rateLimitInfo.requiresConfirmation) {
           // Show confirmation modal
           setApiUsageModal({
             isOpen: true,
             type: 'confirmation',
             title: 'API Usage Confirmation',
-            message: apiResponse.rateLimitInfo.reason || 'Continue with API request?',
+            message: reason || 'Continue with API request?',
             usageStats: apiResponse.rateLimitInfo.usageStats,
             onConfirm: () => {
               ticketmasterApi.getRateLimiter().confirmContinue();
@@ -192,20 +203,21 @@ const BluesNearbyHome = () => {
           });
           return;
         } else {
-          // Show error/warning
+          // Show error/warning modal only for rate limiting, not network errors
           setApiUsageModal({
             isOpen: true,
-            type: apiResponse.rateLimitInfo.reason?.includes('limit') ? 'error' : 'warning',
+            type: reason.includes('limit') ? 'error' : 'warning',
             title: 'API Usage Limit',
-            message: apiResponse.rateLimitInfo.reason || 'API request blocked',
+            message: reason || 'API request blocked',
             usageStats: apiResponse.rateLimitInfo.usageStats
           });
-          setError(apiResponse.rateLimitInfo.reason || 'API request blocked');
+          setError(reason || 'API request blocked');
           return;
         }
       }
 
       // Process successful response
+      setHasNetworkError(false); // Reset network error flag on successful API call
       const response = apiResponse.data;
       if (response?._embedded?.events) {
         const transformedEvents = response._embedded.events.map(event => 
@@ -226,6 +238,7 @@ const BluesNearbyHome = () => {
       }
     } catch (err) {
       console.error('Error searching events:', err);
+      setHasNetworkError(true);
       setError('Unable to load blues events. Please check your connection and try again.');
     } finally {
       setIsLoading(false);
@@ -237,10 +250,10 @@ const BluesNearbyHome = () => {
   };
 
   useEffect(() => {
-    if (userLocation) {
+    if (userLocation && !hasNetworkError) {
       searchEvents(userLocation, dateFilter);
     }
-  }, [userLocation, dateFilter]);
+  }, [userLocation, dateFilter, hasNetworkError]);
 
   const handleLocationSet = (location: UserLocation) => {
     setUserLocation(location);
@@ -248,6 +261,8 @@ const BluesNearbyHome = () => {
 
   const handleRefresh = () => {
     if (userLocation) {
+      setHasNetworkError(false); // Reset network error flag on manual retry
+      setError(null);
       searchEvents(userLocation, dateFilter);
     }
   };
