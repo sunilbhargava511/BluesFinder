@@ -1,8 +1,33 @@
-import React, { useState } from 'react';
-import { Music, MapPin, Calendar, Bell, User, Home, Map, Users, Search } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Music, MapPin, Calendar, Bell, User, Home, Map, Loader, RefreshCw } from 'lucide-react';
+import LocationSetup, { UserLocation } from './LocationSetup';
+import { ticketmasterApi, TicketmasterEvent } from '../services/ticketmasterApi';
+import { calculateDistance, formatDistance, Coordinates } from '../utils/distance';
+
+interface BluesEvent {
+  id: string;
+  artist: string;
+  venue: string;
+  time: string;
+  date: string;
+  distance: string;
+  style: string;
+  image: string;
+  ticketUrl?: string;
+  priceRange?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+}
 
 const BluesNearbyHome = () => {
   const [theme, setTheme] = useState('bbking');
+  const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
+  const [events, setEvents] = useState<BluesEvent[]>([]);
+  const [todayEvents, setTodayEvents] = useState<BluesEvent[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [dateFilter, setDateFilter] = useState<'tonight' | 'week' | 'month'>('week');
   
   const themes = {
     bbking: {
@@ -48,40 +73,128 @@ const BluesNearbyHome = () => {
   };
   
   const currentTheme = themes[theme as keyof typeof themes];
-  
-  const tonightShows = [
-    {
-      id: 1,
-      artist: "Chicago Blues All-Stars",
-      venue: "Buddy Guy's Legends",
-      time: "8:00 PM",
-      distance: "2.3 mi",
-      style: "Chicago Blues",
-      image: "🎤"
-    },
-    {
-      id: 2,
-      artist: "Sarah Johnson Trio",
-      venue: "Kingston Mines",
-      time: "9:30 PM",
-      distance: "3.1 mi",
-      style: "Contemporary Blues",
-      image: "🎸"
+
+  const transformTicketmasterEvent = (event: TicketmasterEvent, userCoords?: Coordinates): BluesEvent => {
+    const venue = event._embedded.venues[0];
+    const venueCoords: Coordinates = {
+      lat: parseFloat(venue.location.latitude),
+      lng: parseFloat(venue.location.longitude)
+    };
+    
+    const distance = userCoords 
+      ? formatDistance(calculateDistance(userCoords, venueCoords))
+      : 'Unknown';
+
+    const eventDate = new Date(event.dates.start.dateTime || `${event.dates.start.localDate}T${event.dates.start.localTime || '20:00'}`);
+    const timeStr = event.dates.start.localTime || eventDate.toLocaleTimeString('en-US', { 
+      hour: 'numeric', 
+      minute: '2-digit' 
+    });
+
+    const priceRange = event.priceRanges?.[0] 
+      ? `$${event.priceRanges[0].min} - $${event.priceRanges[0].max}`
+      : undefined;
+
+    // Get artist name from attractions or event name
+    const artist = event._embedded.attractions?.[0]?.name || event.name;
+
+    // Determine blues subgenre/style
+    const genre = event.classifications[0]?.genre?.name || 'Blues';
+    const subGenre = event.classifications[0]?.subGenre?.name || 'Contemporary Blues';
+
+    return {
+      id: event.id,
+      artist,
+      venue: venue.name,
+      time: timeStr,
+      date: eventDate.toLocaleDateString('en-US', { 
+        weekday: 'short', 
+        month: 'numeric', 
+        day: 'numeric' 
+      }),
+      distance,
+      style: subGenre,
+      image: '🎤', // Could use event.images[0]?.url for real images
+      ticketUrl: event.url,
+      priceRange,
+      address: venue.address?.line1,
+      city: venue.city?.name,
+      state: venue.state?.stateCode
+    };
+  };
+
+  const searchEvents = async (location: UserLocation, period: 'tonight' | 'week' | 'month' = 'week') => {
+    if (!location) return;
+    
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const { start, end } = ticketmasterApi.getDateRange(period);
+      let response;
+      
+      if (location.zipcode) {
+        response = await ticketmasterApi.searchEventsByLocation(
+          location.zipcode,
+          location.radius,
+          start,
+          end
+        );
+      } else if (location.coordinates) {
+        response = await ticketmasterApi.searchEventsByCoordinates(
+          location.coordinates.lat,
+          location.coordinates.lng,
+          location.radius,
+          start,
+          end
+        );
+      } else {
+        throw new Error('No location data available');
+      }
+
+      if (response._embedded?.events) {
+        const transformedEvents = response._embedded.events.map(event => 
+          transformTicketmasterEvent(event, location.coordinates)
+        );
+        
+        setEvents(transformedEvents);
+        
+        // Filter for today's events
+        const today = new Date().toDateString();
+        const todaysEvents = transformedEvents.filter(event => 
+          new Date(event.date).toDateString() === today
+        );
+        setTodayEvents(todaysEvents);
+      } else {
+        setEvents([]);
+        setTodayEvents([]);
+      }
+    } catch (err) {
+      console.error('Error searching events:', err);
+      setError('Unable to load blues events. Please check your connection and try again.');
+    } finally {
+      setIsLoading(false);
     }
-  ];
-  
-  const recommendedShows = [
-    { artist: "Johnny Williams Band", date: "Fri 8/23", venue: "Rosa's Lounge", distance: "4.2 mi" },
-    { artist: "Blues Heritage Ensemble", date: "Sat 8/24", venue: "BLUES Chicago", distance: "1.8 mi" },
-    { artist: "Delta Soul Review", date: "Sun 8/25", venue: "House of Blues", distance: "2.7 mi" }
-  ];
-  
-  const localArtists = [
-    { name: "Marcus King Jr.", instrument: "Guitar", nextShow: "Aug 28" },
-    { name: "Ruby Washington", instrument: "Vocals", nextShow: "Sep 2" },
-    { name: "Tommy 'Blues' Mitchell", instrument: "Harmonica", nextShow: "Aug 30" },
-    { name: "The Chicago Horns", instrument: "Brass Section", nextShow: "Sep 5" }
-  ];
+  };
+
+  useEffect(() => {
+    if (userLocation) {
+      searchEvents(userLocation, dateFilter);
+    }
+  }, [userLocation, dateFilter]);
+
+  const handleLocationSet = (location: UserLocation) => {
+    setUserLocation(location);
+  };
+
+  const handleRefresh = () => {
+    if (userLocation) {
+      searchEvents(userLocation, dateFilter);
+    }
+  };
+
+  const featuredEvent = todayEvents[0] || events[0];
+  const recommendedEvents = events.slice(0, 3);
 
   return (
     <div className="min-h-screen text-white" style={{ background: currentTheme.background }}>
@@ -93,17 +206,35 @@ const BluesNearbyHome = () => {
         <div className="flex justify-between items-center p-4 bg-black bg-opacity-30 backdrop-blur">
           <div className="flex items-center gap-2">
             <MapPin size={20} style={{ color: currentTheme.secondary }} />
-            <span className="text-sm">Chicago - South Side</span>
+            <span className="text-sm">
+              {userLocation?.city && userLocation?.state 
+                ? `${userLocation.city}, ${userLocation.state}`
+                : userLocation?.zipcode || 'Set Location'
+              }
+            </span>
           </div>
           <div className="flex items-center gap-4">
+            <button 
+              onClick={handleRefresh}
+              disabled={isLoading}
+              className="hover:bg-white hover:bg-opacity-10 p-1 rounded transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={20} className={isLoading ? 'animate-spin' : ''} />
+            </button>
             <div className="relative">
               <Bell size={24} />
-              <span className="absolute -top-1 -right-1 bg-red-500 text-xs rounded-full w-5 h-5 flex items-center justify-center">3</span>
+              <span className="absolute -top-1 -right-1 bg-red-500 text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                {events.length > 99 ? '99+' : events.length}
+              </span>
             </div>
             <User size={24} />
           </div>
         </div>
         
+        <div className="p-4 bg-black bg-opacity-20">
+          <LocationSetup onLocationSet={handleLocationSet} currentTheme={currentTheme} />
+        </div>
+
         <div className="p-4 bg-black bg-opacity-20">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm opacity-75">Your Blues Theme</h3>
@@ -129,102 +260,147 @@ const BluesNearbyHome = () => {
             ))}
           </div>
         </div>
-        
+
+        {/* Date Filter */}
         <div className="p-4">
-          <div 
-            className="rounded-xl p-6 shadow-2xl"
-            style={{ 
-              backgroundColor: currentTheme.primary,
-              borderLeft: `4px solid ${currentTheme.secondary}`
-            }}
-          >
-            <div className="flex justify-between items-start mb-2">
-              <h2 className={`text-2xl font-bold ${currentTheme.fontStyle}`}>Tonight's Featured Blues</h2>
-              <span className="text-3xl">🎺</span>
+          <div className="flex gap-2 mb-4">
+            {['tonight', 'week', 'month'].map((period) => (
+              <button
+                key={period}
+                onClick={() => setDateFilter(period as any)}
+                className={`px-3 py-1 rounded-full text-sm transition-all ${
+                  dateFilter === period
+                    ? 'ring-2 ring-white'
+                    : 'opacity-70 hover:opacity-100'
+                }`}
+                style={{
+                  backgroundColor: dateFilter === period ? currentTheme.primary : 'rgba(255,255,255,0.1)'
+                }}
+              >
+                {period === 'tonight' ? 'Tonight' : `This ${period}`}
+              </button>
+            ))}
+          </div>
+        </div>
+        
+        {/* Loading State */}
+        {isLoading && (
+          <div className="p-4 flex items-center justify-center">
+            <Loader className="animate-spin" size={24} />
+            <span className="ml-2">Finding blues events near you...</span>
+          </div>
+        )}
+
+        {/* Error State */}
+        {error && (
+          <div className="p-4">
+            <div className="bg-red-500 bg-opacity-20 border border-red-500 border-opacity-30 rounded-lg p-3">
+              <p className="text-red-200">{error}</p>
             </div>
-            <h3 className="text-xl mb-2">{tonightShows[0].artist}</h3>
-            <div className="flex items-center gap-4 text-sm opacity-90">
-              <span className="flex items-center gap-1">
-                <MapPin size={16} /> {tonightShows[0].venue}
-              </span>
-              <span>{tonightShows[0].time}</span>
-              <span className="bg-black bg-opacity-20 px-2 py-1 rounded">{tonightShows[0].distance}</span>
-            </div>
-            <button 
-              className="mt-4 px-6 py-2 rounded-full font-semibold transition-all hover:scale-105"
-              style={{ backgroundColor: currentTheme.secondary, color: currentTheme.accent }}
+          </div>
+        )}
+
+        {/* Featured Event */}
+        {featuredEvent && !isLoading && (
+          <div className="p-4">
+            <div 
+              className="rounded-xl p-6 shadow-2xl"
+              style={{ 
+                backgroundColor: currentTheme.primary,
+                borderLeft: `4px solid ${currentTheme.secondary}`
+              }}
             >
-              Get Tickets
-            </button>
-          </div>
-        </div>
-        
-        <div className="p-4">
-          <h3 className={`text-lg font-bold mb-3 ${currentTheme.fontStyle}`} style={{ color: currentTheme.secondary }}>
-            Because You Love {currentTheme.name}
-          </h3>
-          <div className="space-y-2">
-            {recommendedShows.map((show, index) => (
-              <div 
-                key={index}
-                className="bg-black bg-opacity-30 rounded-lg p-3 backdrop-blur border border-white border-opacity-10"
+              <div className="flex justify-between items-start mb-2">
+                <h2 className={`text-2xl font-bold ${currentTheme.fontStyle}`}>
+                  {dateFilter === 'tonight' ? "Tonight's Featured Blues" : "Featured Blues Event"}
+                </h2>
+                <span className="text-3xl">🎺</span>
+              </div>
+              <h3 className="text-xl mb-2">{featuredEvent.artist}</h3>
+              <div className="flex items-center gap-4 text-sm opacity-90 mb-2">
+                <span className="flex items-center gap-1">
+                  <MapPin size={16} /> {featuredEvent.venue}
+                </span>
+                <span>{featuredEvent.date} at {featuredEvent.time}</span>
+                <span className="bg-black bg-opacity-20 px-2 py-1 rounded">{featuredEvent.distance}</span>
+              </div>
+              {featuredEvent.priceRange && (
+                <div className="text-sm opacity-75 mb-3">
+                  Tickets: {featuredEvent.priceRange}
+                </div>
+              )}
+              <button 
+                onClick={() => featuredEvent.ticketUrl && window.open(featuredEvent.ticketUrl, '_blank')}
+                className="px-6 py-2 rounded-full font-semibold transition-all hover:scale-105"
+                style={{ backgroundColor: currentTheme.secondary, color: currentTheme.accent }}
+                disabled={!featuredEvent.ticketUrl}
               >
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h4 className="font-semibold">{show.artist}</h4>
-                    <div className="text-sm opacity-75 flex items-center gap-3">
-                      <span>{show.date}</span>
-                      <span>{show.venue}</span>
+                Get Tickets
+              </button>
+            </div>
+          </div>
+        )}
+        
+        {/* Recommended Shows */}
+        {recommendedEvents.length > 0 && !isLoading && (
+          <div className="p-4">
+            <h3 className={`text-lg font-bold mb-3 ${currentTheme.fontStyle}`} style={{ color: currentTheme.secondary }}>
+              Because You Love {currentTheme.name}
+            </h3>
+            <div className="space-y-2">
+              {recommendedEvents.map((event) => (
+                <div 
+                  key={event.id}
+                  className="bg-black bg-opacity-30 rounded-lg p-3 backdrop-blur border border-white border-opacity-10"
+                >
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h4 className="font-semibold">{event.artist}</h4>
+                      <div className="text-sm opacity-75 flex items-center gap-3">
+                        <span>{event.date}</span>
+                        <span>{event.venue}</span>
+                        {event.city && event.state && (
+                          <span>{event.city}, {event.state}</span>
+                        )}
+                      </div>
+                      {event.priceRange && (
+                        <div className="text-xs opacity-60 mt-1">{event.priceRange}</div>
+                      )}
                     </div>
+                    <span 
+                      className="text-sm px-2 py-1 rounded"
+                      style={{ backgroundColor: currentTheme.primary + '40' }}
+                    >
+                      {event.distance}
+                    </span>
                   </div>
-                  <span 
-                    className="text-sm px-2 py-1 rounded"
-                    style={{ backgroundColor: currentTheme.primary + '40' }}
-                  >
-                    {show.distance}
-                  </span>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-        
-        <div className="p-4">
-          <h3 className={`text-lg font-bold mb-3 ${currentTheme.fontStyle}`} style={{ color: currentTheme.secondary }}>
-            Discover Local Blues
-          </h3>
-          <div className="grid grid-cols-2 gap-3">
-            {localArtists.map((artist, index) => (
-              <div 
-                key={index}
-                className="bg-black bg-opacity-30 rounded-lg p-3 backdrop-blur border border-white border-opacity-10"
+        )}
+
+        {/* No Events Message */}
+        {!isLoading && events.length === 0 && userLocation && (
+          <div className="p-4">
+            <div className="bg-black bg-opacity-30 rounded-lg p-6 text-center">
+              <Music size={48} className="mx-auto mb-4 opacity-50" />
+              <h3 className="text-lg font-semibold mb-2">No Blues Events Found</h3>
+              <p className="text-sm opacity-75 mb-4">
+                No blues concerts found within {userLocation.radius} miles of your location for the selected time period.
+              </p>
+              <button
+                onClick={() => setDateFilter('month')}
+                className="px-4 py-2 rounded-full"
+                style={{ backgroundColor: currentTheme.secondary, color: currentTheme.accent }}
               >
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="w-12 h-12 rounded-full bg-gray-600 flex items-center justify-center text-2xl">
-                    🎵
-                  </div>
-                  <div className="flex-1">
-                    <h4 className="font-semibold text-sm">{artist.name}</h4>
-                    <p className="text-xs opacity-75">{artist.instrument}</p>
-                  </div>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-xs opacity-75">Next: {artist.nextShow}</span>
-                  <button 
-                    className="text-xs px-3 py-1 rounded-full"
-                    style={{ 
-                      backgroundColor: currentTheme.secondary + '30',
-                      color: currentTheme.secondary 
-                    }}
-                  >
-                    Follow
-                  </button>
-                </div>
-              </div>
-            ))}
+                Try Next Month
+              </button>
+            </div>
           </div>
-        </div>
+        )}
         
+        {/* Bottom Navigation */}
         <div className="fixed bottom-0 left-0 right-0 bg-black bg-opacity-90 backdrop-blur border-t border-white border-opacity-10">
           <div className="flex justify-around items-center py-3">
             <button className="flex flex-col items-center gap-1" style={{ color: currentTheme.secondary }}>
@@ -249,6 +425,9 @@ const BluesNearbyHome = () => {
             </button>
           </div>
         </div>
+
+        {/* Bottom padding for fixed navigation */}
+        <div className="h-20"></div>
       </div>
     </div>
   );
