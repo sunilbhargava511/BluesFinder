@@ -9,7 +9,7 @@ interface ApiUsageModalProps {
   type: 'confirmation' | 'warning' | 'error';
   title: string;
   message: string;
-  usageStats: {
+  usageStats?: {
     dailyCount: number;
     sessionCount: number;
     dailyLimit: number;
@@ -53,8 +53,8 @@ const ApiUsageModal: React.FC<ApiUsageModalProps> = ({
     return '#10b981'; // green
   };
 
-  const sessionPercentage = Math.min((usageStats.sessionCount / 100) * 100, 100);
-  const dailyPercentage = (usageStats.dailyCount / usageStats.dailyLimit) * 100;
+  const sessionPercentage = usageStats ? Math.min((usageStats.sessionCount / 100) * 100, 100) : 0;
+  const dailyPercentage = usageStats ? (usageStats.dailyCount / usageStats.dailyLimit) * 100 : 0;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
@@ -86,14 +86,14 @@ const ApiUsageModal: React.FC<ApiUsageModalProps> = ({
           <div>
             <div className="flex justify-between text-sm text-white mb-1">
               <span>Session Usage</span>
-              <span>{usageStats.sessionCount}/100 calls</span>
+              <span>{usageStats?.sessionCount || 0}/100 calls</span>
             </div>
             <div className="w-full bg-gray-700 rounded-full h-2">
               <div 
                 className="h-2 rounded-full transition-all duration-300"
                 style={{ 
                   width: `${sessionPercentage}%`,
-                  backgroundColor: getProgressColor(usageStats.sessionCount, 100)
+                  backgroundColor: getProgressColor(usageStats?.sessionCount || 0, 100)
                 }}
               />
             </div>
@@ -102,14 +102,14 @@ const ApiUsageModal: React.FC<ApiUsageModalProps> = ({
           <div>
             <div className="flex justify-between text-sm text-white mb-1">
               <span>Daily Usage</span>
-              <span>{usageStats.dailyCount}/{usageStats.dailyLimit} calls</span>
+              <span>{usageStats?.dailyCount || 0}/{usageStats?.dailyLimit || 5000} calls</span>
             </div>
             <div className="w-full bg-gray-700 rounded-full h-2">
               <div 
                 className="h-2 rounded-full transition-all duration-300"
                 style={{ 
                   width: `${Math.min(dailyPercentage, 100)}%`,
-                  backgroundColor: getProgressColor(usageStats.dailyCount, usageStats.dailyLimit)
+                  backgroundColor: getProgressColor(usageStats?.dailyCount || 0, usageStats?.dailyLimit || 5000)
                 }}
               />
             </div>
@@ -130,11 +130,11 @@ const ApiUsageModal: React.FC<ApiUsageModalProps> = ({
           <div className="mb-4 p-3 bg-white bg-opacity-5 rounded text-xs space-y-2">
             <div className="flex justify-between">
               <span className="opacity-75">Warning Threshold:</span>
-              <span>{usageStats.warningThreshold} calls</span>
+              <span>{usageStats?.warningThreshold || 25} calls</span>
             </div>
             <div className="flex justify-between">
               <span className="opacity-75">Confirmation Required:</span>
-              <span>{usageStats.confirmationThreshold} calls</span>
+              <span>{usageStats?.confirmationThreshold || 50} calls</span>
             </div>
             <div className="flex justify-between">
               <span className="opacity-75">Session Soft Limit:</span>
