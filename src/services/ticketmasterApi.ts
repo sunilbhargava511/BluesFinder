@@ -199,7 +199,7 @@ export class TicketmasterApiService {
     const bluesParams: SearchParams = {
       ...params,
       classificationName: 'music',
-      genreId: 'KnvZfZ7vAvd', // Blues genre ID
+      genreId: 'KnvZfZ7vAv1', // Blues genre ID
       sort: 'date,asc',
       size: params.size || 20,
     };
