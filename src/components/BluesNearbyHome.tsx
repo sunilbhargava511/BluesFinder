@@ -30,6 +30,7 @@ const BluesNearbyHome = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasNetworkError, setHasNetworkError] = useState(false);
+  const [consecutiveErrors, setConsecutiveErrors] = useState(0);
   const [dateFilter, setDateFilter] = useState<'tonight' | 'week' | 'month'>('week');
   
   // API usage tracking
@@ -183,6 +184,7 @@ const BluesNearbyHome = () => {
         if (reason.includes('Failed to fetch') || reason.includes('ERR_INSUFFICIENT_RESOURCES') || reason.includes('API Error')) {
           console.log('Network error detected, not showing modal:', reason);
           setHasNetworkError(true);
+          setConsecutiveErrors(prev => prev + 1);
           setError('Unable to connect to Ticketmaster API. Please check your internet connection and try again.');
           return;
         }
@@ -218,6 +220,7 @@ const BluesNearbyHome = () => {
 
       // Process successful response
       setHasNetworkError(false); // Reset network error flag on successful API call
+      setConsecutiveErrors(0); // Reset error counter on success
       const response = apiResponse.data;
       if (response?._embedded?.events) {
         const transformedEvents = response._embedded.events.map(event => 
@@ -239,6 +242,7 @@ const BluesNearbyHome = () => {
     } catch (err) {
       console.error('Error searching events:', err);
       setHasNetworkError(true);
+      setConsecutiveErrors(prev => prev + 1);
       setError('Unable to load blues events. Please check your connection and try again.');
     } finally {
       setIsLoading(false);
@@ -250,10 +254,13 @@ const BluesNearbyHome = () => {
   };
 
   useEffect(() => {
-    if (userLocation && !hasNetworkError) {
+    if (userLocation && !hasNetworkError && consecutiveErrors < 3) {
       searchEvents(userLocation, dateFilter);
+    } else if (consecutiveErrors >= 3) {
+      console.log('🛑 Stopping auto-retry after 3 consecutive errors');
+      setError('Multiple connection failures. Please click refresh to try again.');
     }
-  }, [userLocation, dateFilter, hasNetworkError]);
+  }, [userLocation, dateFilter, hasNetworkError, consecutiveErrors]);
 
   const handleLocationSet = (location: UserLocation) => {
     setUserLocation(location);
@@ -262,6 +269,7 @@ const BluesNearbyHome = () => {
   const handleRefresh = () => {
     if (userLocation) {
       setHasNetworkError(false); // Reset network error flag on manual retry
+      setConsecutiveErrors(0); // Reset error counter on manual retry
       setError(null);
       searchEvents(userLocation, dateFilter);
     }

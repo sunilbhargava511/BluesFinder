@@ -1,10 +1,11 @@
 import { ApiRateLimiter } from './apiRateLimiter';
 
-const TICKETMASTER_API_KEY = import.meta.env.VITE_TICKETMASTER_API_KEY;
+const TICKETMASTER_API_KEY = import.meta.env.VITE_TICKETMASTER_API_KEY || 'AoXXQmiaMbvACRzAcovOkMxtCSY1Pt88';
 
 // Debug logging for production deployment
-if (!TICKETMASTER_API_KEY) {
+if (!TICKETMASTER_API_KEY || TICKETMASTER_API_KEY === 'undefined') {
   console.error('❌ Ticketmaster API key is missing! Check environment variables.');
+  console.log('Environment variables:', import.meta.env);
 } else {
   console.log('✅ Ticketmaster API key loaded:', TICKETMASTER_API_KEY.substring(0, 8) + '...');
 }
