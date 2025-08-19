@@ -34,6 +34,48 @@ const ApiUsageModal: React.FC<ApiUsageModalProps> = ({
 
   if (!isOpen) return null;
 
+  // Failsafe: If there's no usageStats and it's an error about API failures,
+  // ensure the modal can always be dismissed
+  const hasValidStats = usageStats && typeof usageStats === 'object';
+  const isApiError = message?.includes('Failed to fetch') || message?.includes('API Error');
+  
+  // Force dismissible for API errors without proper stats
+  if (isApiError && !hasValidStats && (type === 'error' || type === 'warning')) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+        <div 
+          className="bg-black bg-opacity-90 rounded-xl p-6 max-w-md w-full border border-white border-opacity-20 backdrop-blur"
+          style={{ borderColor: currentTheme.secondary + '30' }}
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <AlertTriangle size={24} className="text-red-400" />
+              <h3 className="text-lg font-semibold text-white">{title}</h3>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-white opacity-60 hover:opacity-100 transition-opacity"
+            >
+              <X size={20} />
+            </button>
+          </div>
+          
+          <p className="text-white text-sm mb-4 leading-relaxed">
+            {message}
+          </p>
+          
+          <button
+            onClick={onClose}
+            className="w-full px-4 py-2 rounded font-semibold transition-all hover:scale-105"
+            style={{ backgroundColor: currentTheme.secondary, color: currentTheme.accent }}
+          >
+            OK
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const getIcon = () => {
     switch (type) {
       case 'confirmation':
