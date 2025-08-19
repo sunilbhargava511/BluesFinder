@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AlertTriangle, Activity, RefreshCw, X } from 'lucide-react';
 
 interface ApiUsageModalProps {
@@ -32,6 +32,21 @@ const ApiUsageModal: React.FC<ApiUsageModalProps> = ({
 }) => {
   const [showDetails, setShowDetails] = useState(false);
 
+  // Add escape key handler and force close capability
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        console.log('Escape key pressed, force closing modal');
+        onClose();
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener('keydown', handleEscape);
+      return () => document.removeEventListener('keydown', handleEscape);
+    }
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   // Failsafe: If there's no usageStats and it's an error about API failures,
@@ -42,7 +57,15 @@ const ApiUsageModal: React.FC<ApiUsageModalProps> = ({
   // Force dismissible for API errors without proper stats
   if (isApiError && !hasValidStats && (type === 'error' || type === 'warning')) {
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+      <div 
+        className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            console.log('Clicked outside simplified modal, force closing');
+            onClose();
+          }
+        }}
+      >
         <div 
           className="bg-black bg-opacity-90 rounded-xl p-6 max-w-md w-full border border-white border-opacity-20 backdrop-blur"
           style={{ borderColor: currentTheme.secondary + '30' }}
@@ -99,7 +122,15 @@ const ApiUsageModal: React.FC<ApiUsageModalProps> = ({
   const dailyPercentage = usageStats ? (usageStats.dailyCount / usageStats.dailyLimit) * 100 : 0;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          console.log('Clicked outside modal, force closing');
+          onClose();
+        }
+      }}
+    >
       <div 
         className="bg-black bg-opacity-90 rounded-xl p-6 max-w-md w-full border border-white border-opacity-20 backdrop-blur"
         style={{ borderColor: currentTheme.secondary + '30' }}

@@ -504,9 +504,36 @@ const BluesNearbyHome = () => {
       {/* API Usage Modal */}
       <ApiUsageModal
         isOpen={apiUsageModal.isOpen}
-        onClose={() => setApiUsageModal({ ...apiUsageModal, isOpen: false })}
-        onConfirm={apiUsageModal.onConfirm || (() => setApiUsageModal({ ...apiUsageModal, isOpen: false }))}
-        onCancel={() => setApiUsageModal({ ...apiUsageModal, isOpen: false })}
+        onClose={() => {
+          console.log('Force closing modal');
+          setApiUsageModal({ 
+            isOpen: false, 
+            type: 'confirmation', 
+            title: '', 
+            message: '', 
+            usageStats: null 
+          });
+        }}
+        onConfirm={apiUsageModal.onConfirm || (() => {
+          console.log('Force closing modal via confirm');
+          setApiUsageModal({ 
+            isOpen: false, 
+            type: 'confirmation', 
+            title: '', 
+            message: '', 
+            usageStats: null 
+          });
+        })}
+        onCancel={() => {
+          console.log('Force closing modal via cancel');
+          setApiUsageModal({ 
+            isOpen: false, 
+            type: 'confirmation', 
+            title: '', 
+            message: '', 
+            usageStats: null 
+          });
+        }}
         type={apiUsageModal.type}
         title={apiUsageModal.title}
         message={apiUsageModal.message}
