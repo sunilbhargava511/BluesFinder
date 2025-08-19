@@ -10,6 +10,7 @@ if (!TICKETMASTER_API_KEY || TICKETMASTER_API_KEY === 'undefined') {
   console.log('✅ Ticketmaster API key loaded:', TICKETMASTER_API_KEY.substring(0, 8) + '...');
 }
 const BASE_URL = 'https://app.ticketmaster.com/discovery/v2';
+const PROXY_ENABLED = import.meta.env.PROD; // Use proxy in production
 
 export interface TicketmasterEvent {
   id: string;
@@ -150,7 +151,16 @@ export class TicketmasterApiService {
       ),
     });
 
-    const url = `${BASE_URL}/${endpoint}?${searchParams}`;
+    let url: string;
+    
+    if (PROXY_ENABLED) {
+      // Use proxy endpoint in production to avoid CORS
+      const targetUrl = `${BASE_URL}/${endpoint}?${searchParams}`;
+      url = `/api/ticketmaster?url=${encodeURIComponent(targetUrl)}`;
+    } else {
+      // Direct API call in development
+      url = `${BASE_URL}/${endpoint}?${searchParams}`;
+    }
     
     try {
       // Check circuit breaker
