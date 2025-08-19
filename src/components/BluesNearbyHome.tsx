@@ -3,6 +3,8 @@ import { Music, MapPin, Calendar, Bell, User, Home, Map, Loader, RefreshCw } fro
 import LocationSetup, { UserLocation } from './LocationSetup';
 import { ticketmasterApi, TicketmasterEvent, TicketmasterApiService } from '../services/ticketmasterApi';
 import { calculateDistance, formatDistance, Coordinates } from '../utils/distance';
+import ApiUsageModal from './ApiUsageModal';
+import ApiUsageIndicator from './ApiUsageIndicator';
 
 interface BluesEvent {
   id: string;
@@ -28,6 +30,24 @@ const BluesNearbyHome = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dateFilter, setDateFilter] = useState<'tonight' | 'week' | 'month'>('week');
+  
+  // API usage tracking
+  const [apiUsageModal, setApiUsageModal] = useState<{
+    isOpen: boolean;
+    type: 'confirmation' | 'warning' | 'error';
+    title: string;
+    message: string;
+    usageStats: any;
+    onConfirm?: () => void;
+  }>({
+    isOpen: false,
+    type: 'confirmation',
+    title: '',
+    message: '',
+    usageStats: null
+  });
+  const [usageStats, setUsageStats] = useState(ticketmasterApi.getRateLimiter().getUsageStats());
+  const [pendingSearch, setPendingSearch] = useState<(() => Promise<void>) | null>(null);
   
   const themes = {
     bbking: {
@@ -122,7 +142,7 @@ const BluesNearbyHome = () => {
     };
   };
 
-  const searchEvents = async (location: UserLocation, period: 'tonight' | 'week' | 'month' = 'week') => {
+  const executeSearch = async (location: UserLocation, period: 'tonight' | 'week' | 'month' = 'week') => {
     if (!location) return;
     
     setIsLoading(true);
@@ -130,17 +150,17 @@ const BluesNearbyHome = () => {
     
     try {
       const { start, end } = TicketmasterApiService.getDateRange(period);
-      let response;
+      let apiResponse;
       
       if (location.zipcode) {
-        response = await ticketmasterApi.searchEventsByLocation(
+        apiResponse = await ticketmasterApi.searchEventsByLocation(
           location.zipcode,
           location.radius,
           start,
           end
         );
       } else if (location.coordinates) {
-        response = await ticketmasterApi.searchEventsByCoordinates(
+        apiResponse = await ticketmasterApi.searchEventsByCoordinates(
           location.coordinates.lat,
           location.coordinates.lng,
           location.radius,
@@ -151,7 +171,43 @@ const BluesNearbyHome = () => {
         throw new Error('No location data available');
       }
 
-      if (response._embedded?.events) {
+      // Update usage stats
+      setUsageStats(apiResponse.rateLimitInfo.usageStats);
+
+      // Handle rate limiting
+      if (!apiResponse.rateLimitInfo.allowed) {
+        if (apiResponse.rateLimitInfo.requiresConfirmation) {
+          // Show confirmation modal
+          setApiUsageModal({
+            isOpen: true,
+            type: 'confirmation',
+            title: 'API Usage Confirmation',
+            message: apiResponse.rateLimitInfo.reason || 'Continue with API request?',
+            usageStats: apiResponse.rateLimitInfo.usageStats,
+            onConfirm: () => {
+              ticketmasterApi.getRateLimiter().confirmContinue();
+              setApiUsageModal({ ...apiUsageModal, isOpen: false });
+              executeSearch(location, period); // Retry the search
+            }
+          });
+          return;
+        } else {
+          // Show error/warning
+          setApiUsageModal({
+            isOpen: true,
+            type: apiResponse.rateLimitInfo.reason?.includes('limit') ? 'error' : 'warning',
+            title: 'API Usage Limit',
+            message: apiResponse.rateLimitInfo.reason || 'API request blocked',
+            usageStats: apiResponse.rateLimitInfo.usageStats
+          });
+          setError(apiResponse.rateLimitInfo.reason || 'API request blocked');
+          return;
+        }
+      }
+
+      // Process successful response
+      const response = apiResponse.data;
+      if (response?._embedded?.events) {
         const transformedEvents = response._embedded.events.map(event => 
           transformTicketmasterEvent(event, location.coordinates)
         );
@@ -174,6 +230,10 @@ const BluesNearbyHome = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const searchEvents = (location: UserLocation, period: 'tonight' | 'week' | 'month' = 'week') => {
+    executeSearch(location, period);
   };
 
   useEffect(() => {
@@ -213,6 +273,18 @@ const BluesNearbyHome = () => {
             </span>
           </div>
           <div className="flex items-center gap-4">
+            <ApiUsageIndicator
+              usageStats={usageStats}
+              usageLevel={ticketmasterApi.getRateLimiter().getUsageLevel()}
+              currentTheme={currentTheme}
+              onClick={() => setApiUsageModal({
+                isOpen: true,
+                type: 'warning',
+                title: 'API Usage Stats',
+                message: `You've made ${usageStats.sessionCount} API calls this session.`,
+                usageStats
+              })}
+            />
             <button 
               onClick={handleRefresh}
               disabled={isLoading}
@@ -428,6 +500,19 @@ const BluesNearbyHome = () => {
         {/* Bottom padding for fixed navigation */}
         <div className="h-20"></div>
       </div>
+
+      {/* API Usage Modal */}
+      <ApiUsageModal
+        isOpen={apiUsageModal.isOpen}
+        onClose={() => setApiUsageModal({ ...apiUsageModal, isOpen: false })}
+        onConfirm={apiUsageModal.onConfirm || (() => setApiUsageModal({ ...apiUsageModal, isOpen: false }))}
+        onCancel={() => setApiUsageModal({ ...apiUsageModal, isOpen: false })}
+        type={apiUsageModal.type}
+        title={apiUsageModal.title}
+        message={apiUsageModal.message}
+        usageStats={apiUsageModal.usageStats || usageStats}
+        currentTheme={currentTheme}
+      />
     </div>
   );
 };

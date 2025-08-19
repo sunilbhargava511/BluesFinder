@@ -1,23 +1,13 @@
-# Use Node.js 18 
-FROM node:18-slim
+FROM node:18
 
-# Set working directory
 WORKDIR /app
 
-# Copy package files
 COPY package*.json ./
+RUN npm install
 
-# Install dependencies with npm ci for faster, more reliable builds
-RUN npm ci
-
-# Copy all source files
 COPY . .
-
-# Build the application
 RUN npm run build
 
-# Expose the port (Railway will set PORT env variable)
-EXPOSE ${PORT}
+EXPOSE 3000
 
-# Start the production server
 CMD ["npm", "start"]

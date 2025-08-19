@@ -1,3 +1,5 @@
+import { ApiRateLimiter } from './apiRateLimiter';
+
 const TICKETMASTER_API_KEY = import.meta.env.VITE_TICKETMASTER_API_KEY;
 const BASE_URL = 'https://app.ticketmaster.com/discovery/v2';
 
@@ -91,6 +93,7 @@ export interface SearchParams {
 export class TicketmasterApiService {
   private cache = new Map<string, { data: any; timestamp: number }>();
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+  private rateLimiter = ApiRateLimiter.getInstance();
 
   private getCacheKey(endpoint: string, params: SearchParams): string {
     return `${endpoint}_${JSON.stringify(params)}`;
@@ -100,12 +103,36 @@ export class TicketmasterApiService {
     return Date.now() - timestamp < this.CACHE_DURATION;
   }
 
-  private async makeRequest(endpoint: string, params: SearchParams): Promise<any> {
+  async makeRequest(endpoint: string, params: SearchParams): Promise<{
+    data?: any;
+    rateLimitInfo: {
+      allowed: boolean;
+      reason?: string;
+      requiresConfirmation?: boolean;
+      usageStats: any;
+    };
+  }> {
     const cacheKey = this.getCacheKey(endpoint, params);
     const cached = this.cache.get(cacheKey);
     
+    // Check cache first (doesn't count as API call)
     if (cached && this.isValidCache(cached.timestamp)) {
-      return cached.data;
+      return {
+        data: cached.data,
+        rateLimitInfo: {
+          allowed: true,
+          usageStats: this.rateLimiter.getUsageStats()
+        }
+      };
+    }
+
+    // Check rate limit before making API call
+    const rateLimitCheck = await this.rateLimiter.checkRateLimit(endpoint, params);
+    
+    if (!rateLimitCheck.allowed) {
+      return {
+        rateLimitInfo: rateLimitCheck
+      };
     }
 
     const searchParams = new URLSearchParams({
@@ -118,25 +145,56 @@ export class TicketmasterApiService {
     const url = `${BASE_URL}/${endpoint}?${searchParams}`;
     
     try {
+      // Check circuit breaker
+      if (this.rateLimiter.shouldCircuitBreak()) {
+        await this.rateLimiter.waitForBackoff();
+      }
+
       const response = await fetch(url);
       
       if (!response.ok) {
+        // Record failed API call
+        this.rateLimiter.recordApiCall(endpoint, params, false);
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       
       const data = await response.json();
       
+      // Record successful API call
+      this.rateLimiter.recordApiCall(endpoint, params, true);
+      
       // Cache the response
       this.cache.set(cacheKey, { data, timestamp: Date.now() });
       
-      return data;
+      return {
+        data,
+        rateLimitInfo: {
+          allowed: true,
+          usageStats: this.rateLimiter.getUsageStats()
+        }
+      };
     } catch (error) {
       console.error('Ticketmaster API error:', error);
-      throw error;
+      
+      return {
+        rateLimitInfo: {
+          allowed: false,
+          reason: `API Error: ${error.message}`,
+          usageStats: this.rateLimiter.getUsageStats()
+        }
+      };
     }
   }
 
-  async searchBluesEvents(params: SearchParams): Promise<TicketmasterResponse> {
+  async searchBluesEvents(params: SearchParams): Promise<{
+    data?: TicketmasterResponse;
+    rateLimitInfo: {
+      allowed: boolean;
+      reason?: string;
+      requiresConfirmation?: boolean;
+      usageStats: any;
+    };
+  }> {
     // Add blues-specific filtering
     const bluesParams: SearchParams = {
       ...params,
@@ -154,7 +212,7 @@ export class TicketmasterApiService {
     radiusMiles: number = 25,
     startDate?: string,
     endDate?: string
-  ): Promise<TicketmasterResponse> {
+  ) {
     const params: SearchParams = {
       postalCode,
       radius: radiusMiles.toString(),
@@ -172,7 +230,7 @@ export class TicketmasterApiService {
     radiusMiles: number = 25,
     startDate?: string,
     endDate?: string
-  ): Promise<TicketmasterResponse> {
+  ) {
     const params: SearchParams = {
       latlong: `${latitude},${longitude}`,
       radius: radiusMiles.toString(),
@@ -182,6 +240,11 @@ export class TicketmasterApiService {
     };
 
     return this.searchBluesEvents(params);
+  }
+
+  // Get rate limiter instance for components
+  getRateLimiter(): ApiRateLimiter {
+    return this.rateLimiter;
   }
 
   // Helper method to get date ranges
