@@ -1,6 +1,13 @@
 import { ApiRateLimiter } from './apiRateLimiter';
 
 const TICKETMASTER_API_KEY = import.meta.env.VITE_TICKETMASTER_API_KEY;
+
+// Debug logging for production deployment
+if (!TICKETMASTER_API_KEY) {
+  console.error('❌ Ticketmaster API key is missing! Check environment variables.');
+} else {
+  console.log('✅ Ticketmaster API key loaded:', TICKETMASTER_API_KEY.substring(0, 8) + '...');
+}
 const BASE_URL = 'https://app.ticketmaster.com/discovery/v2';
 
 export interface TicketmasterEvent {
