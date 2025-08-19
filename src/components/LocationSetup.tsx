@@ -121,7 +121,7 @@ const LocationSetup: React.FC<LocationSetupProps> = ({ onLocationSet, currentThe
           setIsGettingLocation(false);
         }
       },
-      (error) => {
+      () => {
         setError('Unable to get your location. Please enter your ZIP code manually.');
         setIsGettingLocation(false);
       },
@@ -157,7 +157,7 @@ const LocationSetup: React.FC<LocationSetupProps> = ({ onLocationSet, currentThe
                 onChange={(e) => setZipcode(e.target.value)}
                 placeholder="Enter 5-digit ZIP code"
                 className="w-full px-3 py-2 bg-white bg-opacity-10 rounded border border-white border-opacity-20 text-white placeholder-white placeholder-opacity-50 focus:outline-none focus:ring-2"
-                style={{ focusRing: currentTheme.secondary }}
+                style={{ '--tw-ring-color': currentTheme.secondary } as React.CSSProperties}
                 maxLength={5}
                 pattern="\d{5}"
               />

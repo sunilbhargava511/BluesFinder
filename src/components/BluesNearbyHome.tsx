@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Music, MapPin, Calendar, Bell, User, Home, Map, Loader, RefreshCw } from 'lucide-react';
 import LocationSetup, { UserLocation } from './LocationSetup';
-import { ticketmasterApi, TicketmasterEvent } from '../services/ticketmasterApi';
+import { ticketmasterApi, TicketmasterEvent, TicketmasterApiService } from '../services/ticketmasterApi';
 import { calculateDistance, formatDistance, Coordinates } from '../utils/distance';
 
 interface BluesEvent {
@@ -99,7 +99,6 @@ const BluesNearbyHome = () => {
     const artist = event._embedded.attractions?.[0]?.name || event.name;
 
     // Determine blues subgenre/style
-    const genre = event.classifications[0]?.genre?.name || 'Blues';
     const subGenre = event.classifications[0]?.subGenre?.name || 'Contemporary Blues';
 
     return {
@@ -130,7 +129,7 @@ const BluesNearbyHome = () => {
     setError(null);
     
     try {
-      const { start, end } = ticketmasterApi.getDateRange(period);
+      const { start, end } = TicketmasterApiService.getDateRange(period);
       let response;
       
       if (location.zipcode) {

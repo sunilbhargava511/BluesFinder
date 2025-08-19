@@ -88,7 +88,7 @@ export interface SearchParams {
   page?: number;
 }
 
-class TicketmasterApiService {
+export class TicketmasterApiService {
   private cache = new Map<string, { data: any; timestamp: number }>();
   private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
