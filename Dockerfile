@@ -1,5 +1,5 @@
-# Use Node.js 18 Alpine
-FROM node:18-alpine
+# Use Node.js 18 
+FROM node:18-slim
 
 # Set working directory
 WORKDIR /app
@@ -7,17 +7,17 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install dependencies with npm ci for faster, more reliable builds
+RUN npm ci
 
-# Copy source code
+# Copy all source files
 COPY . .
 
 # Build the application
 RUN npm run build
 
-# Expose port
-EXPOSE $PORT
+# Expose the port (Railway will set PORT env variable)
+EXPOSE ${PORT}
 
-# Start the application
+# Start the production server
 CMD ["npm", "start"]
